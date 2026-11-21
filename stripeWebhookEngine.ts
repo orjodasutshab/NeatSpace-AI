@@ -1,4 +1,4 @@
-﻿import crypto from 'crypto';
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import type { BillingCycle, BillingInvoice, PlanTier, SubscriptionRecord } from './src/types';
@@ -422,3 +422,427 @@ export class StripeWebhookStore {
       const cycleDays = billingCycle === 'annual' ? 365 : 30;
       const fallbackRenewsAt = now + cycleDays * 86400 * 1000;
 
+      updatedSub = {
+        userKey,
+        ...(resolvedUid ? { uid: resolvedUid } : {}),
+        ...(email || prev?.email ? { email: email || prev?.email } : {}),
+        tier: planTier,
+        status: nextStatus,
+        billingCycle,
+        renewsAt: prev?.renewsAt && prev.renewsAt > now ? prev.renewsAt : fallbackRenewsAt,
+        provider: 'stripe',
+        ...(customerId || prev?.customerId ? { customerId: customerId || prev?.customerId } : {}),
+        ...(subscriptionId || prev?.subscriptionId ? { subscriptionId: subscriptionId || prev?.subscriptionId } : {}),
+        ...(priceId || prev?.priceId ? { priceId: priceId || prev?.priceId } : {}),
+        cancelAtPeriodEnd: false,
+        lastEventId: eventId,
+        lastEventType: eventType,
+        syncStatus: 'pending_admin_sync',
+        updatedAt: now,
+        pendingFirestoreSync: true,
+        livemode,
+      };
+      this.state.subscriptions[userKey] = updatedSub;
+      statusAfter = updatedSub.status;
+
+      if (typeof obj.amount_total === 'number' && obj.amount_total >= 0) {
+        const invId = String(obj.invoice || obj.id || `chk_${eventId}`).replace(/[^a-zA-Z0-9_\-]/g, '_');
+        this.addInvoice(userKey, resolvedUid, {
+          id: invId,
+          userId: resolvedUid || userKey,
+          amountCents: Math.round(obj.amount_total),
+          currency: String(obj.currency || 'usd').toUpperCase(),
+          planTier,
+          status: isUnpaid ? 'pending' : 'paid',
+          description: `NeatSpace ${planTier.toUpperCase()} (${billingCycle}) — Checkout`,
+          createdAt: (Number(event.created) || Math.floor(now / 1000)) * 1000,
+        });
+      }
+      outcome = `checkout_completed_${planTier}_${nextStatus}`;
+    } else if (
+      eventType === 'customer.subscription.created' ||
+      eventType === 'customer.subscription.updated'
+    ) {
+      const subscriptionId = obj.id ? String(obj.id) : undefined;
+      const customerId = obj.customer ? String(obj.customer) : undefined;
+      const candidateUid = obj.metadata?.uid;
+
+      const resolved = this.resolveUserKey({
+        uid: candidateUid,
+        customerId,
+        subscriptionId,
+      });
+      userKey = resolved.userKey;
+      resolvedUid = resolved.uid;
+
+      const prev = this.state.subscriptions[userKey];
+      statusBefore = prev?.status;
+
+      const firstItem = Array.isArray(obj.items?.data) ? obj.items.data[0] : undefined;
+      const priceId = firstItem?.price?.id ? String(firstItem.price.id) : prev?.priceId;
+      const interval = firstItem?.price?.recurring?.interval || firstItem?.plan?.interval;
+
+      const { planTier, billingCycle } = resolvePlanFromStripePriceOrMetadata({
+        priceId,
+        metadata: obj.metadata,
+        interval,
+        fallbackTier: prev?.tier || 'pro',
+        fallbackCycle: prev?.billingCycle || 'monthly',
+      });
+
+      const stripeStatus = String(obj.status || 'active').toLowerCase();
+      let mappedStatus: SubscriptionRecord['status'] = 'active';
+      let effectiveTier: PlanTier = planTier;
+
+      if (stripeStatus === 'canceled' || stripeStatus === 'incomplete_expired') {
+        mappedStatus = 'canceled';
+        effectiveTier = 'free';
+      } else if (
+        stripeStatus === 'past_due' ||
+        stripeStatus === 'unpaid' ||
+        stripeStatus === 'incomplete'
+      ) {
+        mappedStatus = 'past_due';
+      } else {
+        mappedStatus = 'active'; // covers active and trialing
+      }
+
+      const periodEndSec = Number(obj.current_period_end || firstItem?.current_period_end || 0);
+      const renewsAt = periodEndSec > 0 ? periodEndSec * 1000 : prev?.renewsAt || now + 30 * 86400 * 1000;
+      const canceledAtSec = Number(obj.canceled_at || 0);
+
+      updatedSub = {
+        userKey,
+        ...(resolvedUid ? { uid: resolvedUid } : {}),
+        ...(prev?.email ? { email: prev.email } : {}),
+        tier: effectiveTier,
+        status: mappedStatus,
+        billingCycle,
+        renewsAt,
+        ...(canceledAtSec > 0 ? { canceledAt: canceledAtSec * 1000 } : {}),
+        provider: 'stripe',
+        ...(customerId || prev?.customerId ? { customerId: customerId || prev?.customerId } : {}),
+        ...(subscriptionId || prev?.subscriptionId ? { subscriptionId: subscriptionId || prev?.subscriptionId } : {}),
+        ...(priceId ? { priceId } : {}),
+        cancelAtPeriodEnd: Boolean(obj.cancel_at_period_end),
+        ...(prev?.lastPaymentFailedAt && mappedStatus === 'past_due'
+          ? { lastPaymentFailedAt: prev.lastPaymentFailedAt }
+          : {}),
+        lastEventId: eventId,
+        lastEventType: eventType,
+        syncStatus: 'pending_admin_sync',
+        updatedAt: now,
+        pendingFirestoreSync: true,
+        livemode,
+      };
+      this.state.subscriptions[userKey] = updatedSub;
+      statusAfter = updatedSub.status;
+      outcome = `${eventType}_${effectiveTier}_${mappedStatus}`;
+    } else if (eventType === 'customer.subscription.deleted') {
+      const subscriptionId = obj.id ? String(obj.id) : undefined;
+      const customerId = obj.customer ? String(obj.customer) : undefined;
+      const candidateUid = obj.metadata?.uid;
+
+      const resolved = this.resolveUserKey({
+        uid: candidateUid,
+        customerId,
+        subscriptionId,
+      });
+      userKey = resolved.userKey;
+      resolvedUid = resolved.uid;
+
+      const prev = this.state.subscriptions[userKey];
+      statusBefore = prev?.status;
+      const canceledAtSec = Number(obj.canceled_at || event.created || 0);
+
+      updatedSub = {
+        userKey,
+        ...(resolvedUid ? { uid: resolvedUid } : {}),
+        ...(prev?.email ? { email: prev.email } : {}),
+        tier: 'free',
+        status: 'canceled',
+        billingCycle: prev?.billingCycle || 'monthly',
+        renewsAt: prev?.renewsAt || now,
+        canceledAt: canceledAtSec > 0 ? canceledAtSec * 1000 : now,
+        provider: 'stripe',
+        ...(customerId || prev?.customerId ? { customerId: customerId || prev?.customerId } : {}),
+        ...(subscriptionId || prev?.subscriptionId ? { subscriptionId: subscriptionId || prev?.subscriptionId } : {}),
+        ...(prev?.priceId ? { priceId: prev.priceId } : {}),
+        cancelAtPeriodEnd: false,
+        lastEventId: eventId,
+        lastEventType: eventType,
+        syncStatus: 'pending_admin_sync',
+        updatedAt: now,
+        pendingFirestoreSync: true,
+        livemode,
+      };
+      this.state.subscriptions[userKey] = updatedSub;
+      statusAfter = 'canceled';
+      outcome = 'subscription_deleted_downgraded_free';
+    } else if (eventType === 'invoice.payment_failed') {
+      const customerId = obj.customer ? String(obj.customer) : undefined;
+      const subscriptionId = obj.subscription ? String(obj.subscription) : undefined;
+      const email = String(obj.customer_email || '').toLowerCase() || undefined;
+      const candidateUid =
+        obj.subscription_details?.metadata?.uid || obj.metadata?.uid || undefined;
+
+      const resolved = this.resolveUserKey({
+        uid: candidateUid,
+        customerId,
+        subscriptionId,
+        email,
+      });
+      userKey = resolved.userKey;
+      resolvedUid = resolved.uid;
+
+      const prev = this.state.subscriptions[userKey];
+      statusBefore = prev?.status;
+
+      const lineItem = Array.isArray(obj.lines?.data) ? obj.lines.data[0] : undefined;
+      const priceId = lineItem?.price?.id ? String(lineItem.price.id) : prev?.priceId;
+      const { planTier, billingCycle } = resolvePlanFromStripePriceOrMetadata({
+        priceId,
+        metadata: obj.subscription_details?.metadata || obj.metadata,
+        fallbackTier: prev?.tier || 'pro',
+        fallbackCycle: prev?.billingCycle || 'monthly',
+      });
+
+      updatedSub = {
+        userKey,
+        ...(resolvedUid ? { uid: resolvedUid } : {}),
+        ...(email || prev?.email ? { email: email || prev?.email } : {}),
+        tier: prev?.tier || planTier,
+        status: 'past_due',
+        billingCycle: prev?.billingCycle || billingCycle,
+        renewsAt: prev?.renewsAt || now,
+        provider: 'stripe',
+        ...(customerId || prev?.customerId ? { customerId: customerId || prev?.customerId } : {}),
+        ...(subscriptionId || prev?.subscriptionId ? { subscriptionId: subscriptionId || prev?.subscriptionId } : {}),
+        ...(priceId ? { priceId } : {}),
+        lastPaymentFailedAt: now,
+        lastEventId: eventId,
+        lastEventType: eventType,
+        syncStatus: 'pending_admin_sync',
+        updatedAt: now,
+        pendingFirestoreSync: true,
+        livemode,
+      };
+      this.state.subscriptions[userKey] = updatedSub;
+      statusAfter = 'past_due';
+
+      const invId = String(obj.id || `inv_fail_${eventId}`).replace(/[^a-zA-Z0-9_\-]/g, '_');
+      const amountDue = Number(obj.amount_due ?? obj.amount_remaining ?? 0);
+      this.addInvoice(userKey, resolvedUid, {
+        id: invId,
+        userId: resolvedUid || userKey,
+        amountCents: Math.max(0, Math.round(amountDue)),
+        currency: String(obj.currency || 'usd').toUpperCase(),
+        planTier: updatedSub.tier,
+        status: 'pending',
+        description: `[Payment Failed — Attempt ${Number(obj.attempt_count || 1)}] NeatSpace ${updatedSub.tier.toUpperCase()}`,
+        createdAt: (Number(event.created) || Math.floor(now / 1000)) * 1000,
+      });
+      outcome = `invoice_payment_failed_attempt_${Number(obj.attempt_count || 1)}`;
+    } else {
+      handled = false;
+    }
+
+    const logEntry: WebhookEventLogEntry = {
+      id: eventId,
+      type: eventType,
+      receivedAt: now,
+      userKey,
+      outcome,
+      livemode,
+      ...(statusBefore ? { statusBefore } : {}),
+      ...(statusAfter ? { statusAfter } : {}),
+      ...(updatedSub ? { planTier: updatedSub.tier } : {}),
+    };
+    this.state.processedEvents[eventId] = logEntry;
+    this.persistToDisk();
+
+    return {
+      duplicate: false,
+      handled,
+      eventId,
+      type: eventType,
+      userKey,
+      outcome,
+      subscription: updatedSub,
+    };
+  }
+
+  public recordVerifiedCheckoutFromStripeSession(uid: string, email: string | undefined, session: any): ServerStripeSubscriptionRecord {
+    const customerId = session.customer ? String(session.customer) : undefined;
+    const subscriptionObj = typeof session.subscription === 'object' && session.subscription ? session.subscription : undefined;
+    const subscriptionId = subscriptionObj?.id
+      ? String(subscriptionObj.id)
+      : session.subscription
+      ? String(session.subscription)
+      : undefined;
+
+    this.linkUserCorrelations({ uid, email, customerId, subscriptionId });
+
+    const prev = this.state.subscriptions[uid];
+    const firstItem = Array.isArray(subscriptionObj?.items?.data) ? subscriptionObj.items.data[0] : undefined;
+    const priceId = firstItem?.price?.id ? String(firstItem.price.id) : prev?.priceId;
+    const { planTier, billingCycle } = resolvePlanFromStripePriceOrMetadata({
+      priceId,
+      metadata: session.metadata || subscriptionObj?.metadata,
+      interval: firstItem?.price?.recurring?.interval,
+      fallbackTier: prev?.tier && prev.tier !== 'free' ? prev.tier : 'pro',
+      fallbackCycle: prev?.billingCycle || 'monthly',
+    });
+
+    const now = Date.now();
+    const periodEndSec = Number(subscriptionObj?.current_period_end || 0);
+    const renewsAt =
+      periodEndSec > 0
+        ? periodEndSec * 1000
+        : now + (billingCycle === 'annual' ? 365 : 30) * 86400 * 1000;
+
+    const nextStatus: SubscriptionRecord['status'] =
+      session.payment_status === 'unpaid' ? 'past_due' : 'active';
+
+    const rec: ServerStripeSubscriptionRecord = {
+      userKey: uid,
+      uid,
+      ...(email ? { email: email.toLowerCase() } : prev?.email ? { email: prev.email } : {}),
+      tier: planTier,
+      status: nextStatus,
+      billingCycle,
+      renewsAt,
+      provider: 'stripe',
+      ...(customerId ? { customerId } : {}),
+      ...(subscriptionId ? { subscriptionId } : {}),
+      ...(priceId ? { priceId } : {}),
+      cancelAtPeriodEnd: Boolean(subscriptionObj?.cancel_at_period_end),
+      lastEventId: prev?.lastEventId || `session_${String(session.id || '')}`,
+      lastEventType: prev?.lastEventType || 'checkout.session.verified',
+      syncStatus: 'pending_admin_sync',
+      updatedAt: now,
+      pendingFirestoreSync: true,
+      livemode: Boolean(session.livemode),
+    };
+    this.state.subscriptions[uid] = rec;
+
+    if (typeof session.amount_total === 'number' && session.amount_total >= 0) {
+      const invId = String(session.invoice || session.id || `sess_${now}`).replace(/[^a-zA-Z0-9_\-]/g, '_');
+      this.addInvoice(uid, uid, {
+        id: invId,
+        userId: uid,
+        amountCents: Math.round(session.amount_total),
+        currency: String(session.currency || 'usd').toUpperCase(),
+        planTier,
+        status: session.payment_status === 'unpaid' ? 'pending' : 'paid',
+        description: `NeatSpace ${planTier.toUpperCase()} (${billingCycle}) — Verified Checkout`,
+        createdAt: now,
+      });
+    }
+
+    this.persistToDisk();
+    return rec;
+  }
+
+  public getUserSubscriptionView(uid: string, email?: string): {
+    subscription: ServerStripeSubscriptionRecord | null;
+    invoices: BillingInvoice[];
+  } {
+    if (email) {
+      const cleanEmail = email.toLowerCase();
+      if (!this.state.uidByEmail[cleanEmail]) {
+        this.linkUserCorrelations({ uid, email: cleanEmail });
+      }
+    }
+    const sub = this.state.subscriptions[uid] || (email ? this.state.subscriptions[`email:${email.toLowerCase()}`] : undefined) || null;
+    const invs = this.state.invoicesByUserKey[uid] || [];
+    return { subscription: sub, invoices: invs };
+  }
+
+  public getAdminOverview(): {
+    recentEvents: WebhookEventLogEntry[];
+    subscriptions: ServerStripeSubscriptionRecord[];
+    invoicesByUserKey: Record<string, BillingInvoice[]>;
+    totalEventsProcessed: number;
+    pendingFirestoreSyncCount: number;
+  } {
+    const recentEvents = Object.values(this.state.processedEvents)
+      .sort((a, b) => b.receivedAt - a.receivedAt)
+      .slice(0, 50);
+    const subscriptions = Object.values(this.state.subscriptions).sort((a, b) => b.updatedAt - a.updatedAt);
+    const pendingFirestoreSyncCount = subscriptions.filter((s) => s.pendingFirestoreSync).length;
+
+    return {
+      recentEvents,
+      subscriptions,
+      invoicesByUserKey: this.state.invoicesByUserKey,
+      totalEventsProcessed: Object.keys(this.state.processedEvents).length,
+      pendingFirestoreSyncCount,
+    };
+  }
+
+  public markSyncedToFirestore(userKey: string, eventId?: string): ServerStripeSubscriptionRecord | null {
+    const sub = this.state.subscriptions[userKey];
+    if (!sub) return null;
+    if (eventId && sub.lastEventId && sub.lastEventId !== eventId) {
+      // A newer event arrived concurrently; keep pending flag true
+      return sub;
+    }
+    sub.pendingFirestoreSync = false;
+    sub.syncStatus = 'synced';
+    sub.syncedToFirestoreAt = Date.now();
+    this.persistToDisk();
+    return sub;
+  }
+
+  public markCancelAtPeriodEnd(uid: string, cancelAtPeriodEnd: boolean): ServerStripeSubscriptionRecord | null {
+    const sub = this.state.subscriptions[uid];
+    if (!sub) return null;
+    sub.cancelAtPeriodEnd = cancelAtPeriodEnd;
+    sub.updatedAt = Date.now();
+    sub.pendingFirestoreSync = true;
+    sub.syncStatus = 'pending_admin_sync';
+    this.persistToDisk();
+    return sub;
+  }
+
+  public getEntitlementsForUser(uid: string, email?: string, isAdmin = false) {
+    if (isAdmin) {
+      return {
+        planTier: 'premium' as PlanTier,
+        status: 'active' as const,
+        source: 'admin' as const,
+        limits: {
+          ...PLAN_SPECS.premium,
+          maxSavedRooms: 500,
+          maxRoomLayouts: 200,
+        },
+        subscription: this.getUserSubscriptionView(uid, email).subscription,
+      };
+    }
+
+    const { subscription } = this.getUserSubscriptionView(uid, email);
+    let effectiveTier: PlanTier = 'free';
+    let effectiveStatus: SubscriptionRecord['status'] = 'active';
+    let source: 'stripe_server' | 'free_default' = 'free_default';
+
+    if (subscription) {
+      source = 'stripe_server';
+      effectiveStatus = subscription.status;
+      if (subscription.status === 'active') {
+        effectiveTier = subscription.tier;
+      } else {
+        // canceled or past_due users receive Free quotas until payment recovers
+        effectiveTier = 'free';
+      }
+    }
+
+    return {
+      planTier: effectiveTier,
+      status: effectiveStatus,
+      source,
+      limits: PLAN_SPECS[effectiveTier],
+      subscription,
+    };
+  }
+}
