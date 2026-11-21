@@ -1,4 +1,4 @@
-﻿rules_version = '2';
+rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -318,3 +318,322 @@ service cloud.firestore {
       allow list: if isBootstrappedAdmin();
       allow create: if isValidId(userId)
         && isVerifiedUser()
+        && isOwner(userId)
+        && isValidUserProfile(incoming(), userId)
+        && (!incoming().keys().hasAny(['role']) || incoming().role == 'user')
+        && (!incoming().keys().hasAny(['status']) || incoming().status == 'active')
+        && (!incoming().keys().hasAny(['planTier']) || incoming().planTier == 'free')
+        && !incoming().keys().hasAny(['subscription'])
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(userId)
+        && isVerifiedUser()
+        && isValidUserProfile(incoming(), userId)
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          (isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly([
+            'displayName',
+            'photoURL',
+            'language',
+            'privacy',
+            'preferences',
+            'stats',
+            'reminderConfig',
+            'familyMembers',
+            'familyLogs',
+            'cleaningHistory',
+            'notifications',
+            'updatedAt'
+          ]))
+          || (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly([
+            'role',
+            'status',
+            'planTier',
+            'subscription',
+            'updatedAt'
+          ]))
+        );
+      allow delete: if isValidId(userId) && isVerifiedUser() && (isOwner(userId) || isAdmin());
+
+      match /rooms/{roomId} {
+        allow get: if isValidId(userId) && isValidId(roomId) && (isOwner(userId) || isAdmin());
+        allow list: if isValidId(userId) && ((isOwner(userId) && existing().userId == request.auth.uid) || isBootstrappedAdmin());
+        allow create: if isValidId(userId)
+          && isValidId(roomId)
+          && isVerifiedUser()
+          && isOwner(userId)
+          && isValidRoomPlan(incoming(), userId, roomId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && exists(/databases/$(database)/documents/users/$(userId));
+        allow update: if isValidId(userId)
+          && isValidId(roomId)
+          && isVerifiedUser()
+          && isOwner(userId)
+          && isValidRoomPlan(incoming(), userId, roomId)
+          && incoming().id == existing().id
+          && incoming().userId == existing().userId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && exists(/databases/$(database)/documents/users/$(userId))
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'actionPlan', 'triageItems', 'storageRecommendations', 'userNotes',
+            'afterImageUrl', 'afterClutterScore', 'afterSummary', 'floorplanZones',
+            'weeklySchedule', 'redesignPreviewUrl', 'redesignStyle', 'redesignSummary',
+            'assignedMemberId', 'updatedAt'
+          ]);
+        allow delete: if isValidId(userId) && isValidId(roomId) && isVerifiedUser() && (isOwner(userId) || isAdmin());
+      }
+
+      match /inventory/{itemId} {
+        allow get: if isValidId(userId) && isValidId(itemId) && isOwner(userId);
+        allow list: if isValidId(userId) && isOwner(userId) && existing().userId == request.auth.uid;
+        allow create: if isValidId(userId)
+          && isValidId(itemId)
+          && isVerifiedUser()
+          && isOwner(userId)
+          && isValidInventoryItem(incoming(), userId, itemId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && exists(/databases/$(database)/documents/users/$(userId));
+        allow update: if isValidId(userId)
+          && isValidId(itemId)
+          && isVerifiedUser()
+          && isOwner(userId)
+          && isValidInventoryItem(incoming(), userId, itemId)
+          && incoming().id == existing().id
+          && incoming().userId == existing().userId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && exists(/databases/$(database)/documents/users/$(userId))
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'itemName', 'location', 'roomName', 'category', 'quantity',
+            'usageFrequency', 'photoUrl', 'notes', 'updatedAt'
+          ]);
+        allow delete: if isValidId(userId) && isValidId(itemId) && isVerifiedUser() && isOwner(userId);
+      }
+
+      match /calendarTasks/{taskId} {
+        allow get: if isValidId(userId) && isValidId(taskId) && isOwner(userId);
+        allow list: if isValidId(userId) && isOwner(userId) && existing().userId == request.auth.uid;
+        allow create: if isValidId(userId)
+          && isValidId(taskId)
+          && isVerifiedUser()
+          && isOwner(userId)
+          && isValidCalendarTask(incoming(), userId, taskId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && exists(/databases/$(database)/documents/users/$(userId));
+        allow update: if isValidId(userId)
+          && isValidId(taskId)
+          && isVerifiedUser()
+          && isOwner(userId)
+          && isValidCalendarTask(incoming(), userId, taskId)
+          && incoming().id == existing().id
+          && incoming().userId == existing().userId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && exists(/databases/$(database)/documents/users/$(userId))
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'dateIso', 'title', 'roomName', 'minutes', 'priority',
+            'deadlineTime', 'completed', 'updatedAt'
+          ]);
+        allow delete: if isValidId(userId) && isValidId(taskId) && isVerifiedUser() && isOwner(userId);
+      }
+
+      match /savedDesigns/{designId} {
+        allow get: if isValidId(userId) && isValidId(designId) && isOwner(userId);
+        allow list: if isValidId(userId) && isOwner(userId) && existing().userId == request.auth.uid;
+        allow create: if isValidId(userId)
+          && isValidId(designId)
+          && isVerifiedUser()
+          && isOwner(userId)
+          && isValidSavedDesign(incoming(), userId, designId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && exists(/databases/$(database)/documents/users/$(userId));
+        allow update: if isValidId(userId)
+          && isValidId(designId)
+          && isVerifiedUser()
+          && isOwner(userId)
+          && isValidSavedDesign(incoming(), userId, designId)
+          && incoming().id == existing().id
+          && incoming().userId == existing().userId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && exists(/databases/$(database)/documents/users/$(userId))
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'roomName', 'wallColor', 'summary', 'updatedAt'
+          ]);
+        allow delete: if isValidId(userId) && isValidId(designId) && isVerifiedUser() && isOwner(userId);
+      }
+
+      match /budgetItems/{itemId} {
+        allow get: if isValidId(userId) && isValidId(itemId) && isOwner(userId);
+        allow list: if isValidId(userId) && isOwner(userId) && existing().userId == request.auth.uid;
+        allow create: if isValidId(userId)
+          && isValidId(itemId)
+          && isVerifiedUser()
+          && isOwner(userId)
+          && isValidBudgetItem(incoming(), userId, itemId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && exists(/databases/$(database)/documents/users/$(userId));
+        allow update: if isValidId(userId)
+          && isValidId(itemId)
+          && isVerifiedUser()
+          && isOwner(userId)
+          && isValidBudgetItem(incoming(), userId, itemId)
+          && incoming().id == existing().id
+          && incoming().userId == existing().userId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && exists(/databases/$(database)/documents/users/$(userId))
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'roomName', 'title', 'category', 'estimatedCost', 'actualCost',
+            'purchased', 'notes', 'updatedAt'
+          ]);
+        allow delete: if isValidId(userId) && isValidId(itemId) && isVerifiedUser() && isOwner(userId);
+      }
+
+      match /roomLayouts/{layoutId} {
+        allow get: if isValidId(userId) && isValidId(layoutId) && isOwner(userId);
+        allow list: if isValidId(userId) && isOwner(userId) && existing().userId == request.auth.uid;
+        allow create: if isValidId(userId)
+          && isValidId(layoutId)
+          && isVerifiedUser()
+          && isOwner(userId)
+          && isValidRoomLayout(incoming(), userId, layoutId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && exists(/databases/$(database)/documents/users/$(userId));
+        allow update: if isValidId(userId)
+          && isValidId(layoutId)
+          && isVerifiedUser()
+          && isOwner(userId)
+          && isValidRoomLayout(incoming(), userId, layoutId)
+          && incoming().id == existing().id
+          && incoming().userId == existing().userId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && exists(/databases/$(database)/documents/users/$(userId))
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'roomType', 'unit', 'width', 'length', 'ceilingHeight',
+            'openings', 'furniture', 'aiSummary', 'updatedAt'
+          ]);
+        allow delete: if isValidId(userId) && isValidId(layoutId) && isVerifiedUser() && isOwner(userId);
+      }
+
+      match /usage/{monthKey} {
+        allow get: if isValidId(userId) && isValidId(monthKey) && (isOwner(userId) || isAdmin());
+        allow list: if isValidId(userId) && ((isOwner(userId) && existing().userId == request.auth.uid) || isBootstrappedAdmin());
+        allow create: if isValidId(userId)
+          && isValidId(monthKey)
+          && isVerifiedUser()
+          && isOwner(userId)
+          && isValidUsageCounter(incoming(), userId, monthKey)
+          && incoming().updatedAt == request.time
+          && exists(/databases/$(database)/documents/users/$(userId));
+        allow update: if isValidId(userId)
+          && isValidId(monthKey)
+          && isVerifiedUser()
+          && isOwner(userId)
+          && isValidUsageCounter(incoming(), userId, monthKey)
+          && incoming().monthKey == existing().monthKey
+          && incoming().userId == existing().userId
+          && incoming().updatedAt == request.time
+          && exists(/databases/$(database)/documents/users/$(userId))
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'roomAnalyses', 'aiRedesigns', 'aiCoachMessages',
+            'shoppingQueries', 'layoutSuggestions', 'updatedAt'
+          ]);
+        allow delete: if isValidId(userId) && isValidId(monthKey) && isVerifiedUser() && isOwner(userId);
+      }
+
+      match /billing/{invoiceId} {
+        allow get: if isValidId(userId) && isValidId(invoiceId) && (isOwner(userId) || isAdmin());
+        allow list: if isValidId(userId) && ((isOwner(userId) && existing().userId == request.auth.uid) || isBootstrappedAdmin());
+        allow create: if isValidId(userId)
+          && isValidId(invoiceId)
+          && isAdmin()
+          && isValidBillingInvoice(incoming(), userId, invoiceId)
+          && incoming().createdAt == request.time
+          && exists(/databases/$(database)/documents/users/$(userId));
+        allow update: if isValidId(userId)
+          && isValidId(invoiceId)
+          && isAdmin()
+          && isValidBillingInvoice(incoming(), userId, invoiceId)
+          && incoming().id == existing().id
+          && incoming().userId == existing().userId
+          && incoming().createdAt == existing().createdAt
+          && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'description']);
+        allow delete: if isValidId(userId) && isValidId(invoiceId) && isVerifiedUser() && (isOwner(userId) || isAdmin());
+      }
+    }
+
+    match /feedback/{feedbackId} {
+      allow get: if isValidId(feedbackId) && isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().userId == request.auth.uid || isBootstrappedAdmin());
+      allow create: if isValidId(feedbackId)
+        && isVerifiedUser()
+        && isValidFeedback(incoming(), feedbackId)
+        && incoming().userId == request.auth.uid
+        && incoming().status == 'new'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(feedbackId)
+        && isAdmin()
+        && isValidFeedback(incoming(), feedbackId)
+        && incoming().id == existing().id
+        && incoming().userId == existing().userId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'adminNote', 'updatedAt']);
+      allow delete: if isValidId(feedbackId) && isAdmin();
+    }
+
+    match /reports/{reportId} {
+      allow get: if isValidId(reportId) && isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().userId == request.auth.uid || isBootstrappedAdmin());
+      allow create: if isValidId(reportId)
+        && isVerifiedUser()
+        && isValidReport(incoming(), reportId)
+        && incoming().userId == request.auth.uid
+        && incoming().status == 'open'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(reportId)
+        && isAdmin()
+        && isValidReport(incoming(), reportId)
+        && incoming().id == existing().id
+        && incoming().userId == existing().userId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'adminResolution', 'updatedAt']);
+      allow delete: if isValidId(reportId) && isAdmin();
+    }
+
+    match /auditLogs/{logId} {
+      allow get: if isValidId(logId) && isAdmin();
+      allow list: if isBootstrappedAdmin();
+      allow create: if isValidId(logId)
+        && isVerifiedUser()
+        && isValidAuditLog(incoming(), logId)
+        && incoming().createdAt == request.time;
+      allow update, delete: if false;
+    }
+
+    match /systemConfig/{configId} {
+      allow get: if isValidId(configId) && configId == 'settings';
+      allow list: if false;
+      allow create, update: if isValidId(configId)
+        && configId == 'settings'
+        && isAdmin()
+        && isValidSystemConfig(incoming())
+        && incoming().updatedAt == request.time;
+      allow delete: if false;
+    }
+  }
+}
