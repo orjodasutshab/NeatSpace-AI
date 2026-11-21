@@ -1,0 +1,320 @@
+﻿rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Global helper primitives
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isBootstrappedAdmin() {
+      return isVerifiedUser() && request.auth.token.email == 'abc085876@gmail.com';
+    }
+
+    function isAdmin() {
+      return isBootstrappedAdmin() || (
+        isVerifiedUser() && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    // Entity validation blueprints
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll(['uid', 'displayName', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly([
+          'uid',
+          'displayName',
+          'photoURL',
+          'language',
+          'role',
+          'status',
+          'planTier',
+          'subscription',
+          'privacy',
+          'preferences',
+          'stats',
+          'reminderConfig',
+          'familyMembers',
+          'familyLogs',
+          'cleaningHistory',
+          'notifications',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.uid is string
+        && isValidId(data.uid)
+        && data.uid == userId
+        && data.displayName is string
+        && data.displayName.size() >= 1
+        && data.displayName.size() <= 120
+        && (!data.keys().hasAny(['photoURL']) || (data.photoURL is string && data.photoURL.size() <= 500))
+        && (!data.keys().hasAny(['language']) || (data.language is string && data.language.size() <= 8 && data.language in ['en', 'bn']))
+        && (!data.keys().hasAny(['role']) || (data.role is string && data.role.size() <= 16 && data.role in ['user', 'admin']))
+        && (!data.keys().hasAny(['status']) || (data.status is string && data.status.size() <= 16 && data.status in ['active', 'suspended']))
+        && (!data.keys().hasAny(['planTier']) || (data.planTier is string && data.planTier.size() <= 16 && data.planTier in ['free', 'pro', 'premium']))
+        && (!data.keys().hasAny(['subscription']) || (data.subscription is map))
+        && (!data.keys().hasAny(['privacy']) || (data.privacy is map))
+        && (!data.keys().hasAny(['preferences']) || (data.preferences is map))
+        && (!data.keys().hasAny(['stats']) || (data.stats is map))
+        && (!data.keys().hasAny(['reminderConfig']) || (data.reminderConfig is map))
+        && (!data.keys().hasAny(['familyMembers']) || (data.familyMembers is list && data.familyMembers.size() <= 20 && (data.familyMembers.size() == 0 || data.familyMembers[0] is map)))
+        && (!data.keys().hasAny(['familyLogs']) || (data.familyLogs is list && data.familyLogs.size() <= 40 && (data.familyLogs.size() == 0 || data.familyLogs[0] is map)))
+        && (!data.keys().hasAny(['cleaningHistory']) || (data.cleaningHistory is list && data.cleaningHistory.size() <= 80 && (data.cleaningHistory.size() == 0 || data.cleaningHistory[0] is map)))
+        && (!data.keys().hasAny(['notifications']) || (data.notifications is list && data.notifications.size() <= 30 && (data.notifications.size() == 0 || data.notifications[0] is map)))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidRoomPlan(data, userId, roomId) {
+      return data.keys().hasAll([
+          'id', 'userId', 'roomName', 'roomType', 'focusGoal', 'imageUrl', 'clutterScore',
+          'overallAssessment', 'detectedItems', 'quickWins', 'problemAreas', 'actionPlan',
+          'storageRecommendations', 'layoutAdvice', 'minimalistTip', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'userId', 'roomName', 'roomType', 'focusGoal', 'imageUrl', 'clutterScore',
+          'cleaningDifficulty', 'estimatedCleaningMinutes', 'furnitureAnalysis', 'overallAssessment',
+          'detectedItems', 'quickWins', 'problemAreas', 'actionPlan', 'storageRecommendations',
+          'layoutAdvice', 'minimalistTip', 'afterImageUrl', 'afterClutterScore', 'afterSummary',
+          'triageItems', 'maintenanceHabits', 'userNotes', 'floorplanZones', 'weeklySchedule',
+          'detectedObjects', 'spaceUtilization', 'colorDecor', 'recyclingTips',
+          'redesignPreviewUrl', 'redesignStyle', 'redesignSummary', 'assignedMemberId',
+          'createdAt', 'updatedAt'
+        ])
+        && data.id is string && isValidId(data.id) && data.id == roomId
+        && data.userId is string && isValidId(data.userId) && data.userId == userId && data.userId == request.auth.uid
+        && data.roomName is string && data.roomName.size() >= 1 && data.roomName.size() <= 200
+        && data.roomType is string && data.roomType.size() <= 40
+        && data.roomType in ['living_room', 'bedroom', 'home_office', 'kitchen', 'dining_room', 'closet', 'bathroom', 'garage', 'kids_room', 'general']
+        && data.focusGoal is string && data.focusGoal.size() <= 40
+        && data.focusGoal in ['quick_wins', 'maximize_space', 'storage_solutions', 'aesthetic_reset', 'deep_declutter']
+        && data.imageUrl is string && data.imageUrl.size() <= 250000
+        && data.clutterScore is int && data.clutterScore >= 0 && data.clutterScore <= 100
+        && (!data.keys().hasAny(['cleaningDifficulty']) || (data.cleaningDifficulty is string && data.cleaningDifficulty.size() <= 24 && data.cleaningDifficulty in ['Easy', 'Moderate', 'Intensive']))
+        && (!data.keys().hasAny(['estimatedCleaningMinutes']) || (data.estimatedCleaningMinutes is int && data.estimatedCleaningMinutes >= 1 && data.estimatedCleaningMinutes <= 600))
+        && (!data.keys().hasAny(['furnitureAnalysis']) || (data.furnitureAnalysis is string && data.furnitureAnalysis.size() <= 1500))
+        && data.overallAssessment is string && data.overallAssessment.size() <= 2000
+        && data.detectedItems is list && data.detectedItems.size() <= 30 && (data.detectedItems.size() == 0 || data.detectedItems[0] is string)
+        && data.quickWins is list && data.quickWins.size() <= 15 && (data.quickWins.size() == 0 || data.quickWins[0] is string)
+        && data.problemAreas is list && data.problemAreas.size() <= 15 && (data.problemAreas.size() == 0 || data.problemAreas[0] is map)
+        && data.actionPlan is list && data.actionPlan.size() <= 25 && (data.actionPlan.size() == 0 || data.actionPlan[0] is map)
+        && data.storageRecommendations is list && data.storageRecommendations.size() <= 15 && (data.storageRecommendations.size() == 0 || data.storageRecommendations[0] is map)
+        && data.layoutAdvice is string && data.layoutAdvice.size() <= 3000
+        && data.minimalistTip is string && data.minimalistTip.size() <= 1000
+        && (!data.keys().hasAny(['afterImageUrl']) || (data.afterImageUrl is string && data.afterImageUrl.size() <= 250000))
+        && (!data.keys().hasAny(['afterClutterScore']) || (data.afterClutterScore is int && data.afterClutterScore >= 0 && data.afterClutterScore <= 100))
+        && (!data.keys().hasAny(['afterSummary']) || (data.afterSummary is string && data.afterSummary.size() <= 1000))
+        && (!data.keys().hasAny(['triageItems']) || (data.triageItems is list && data.triageItems.size() <= 30 && (data.triageItems.size() == 0 || data.triageItems[0] is map)))
+        && (!data.keys().hasAny(['maintenanceHabits']) || (data.maintenanceHabits is list && data.maintenanceHabits.size() <= 10 && (data.maintenanceHabits.size() == 0 || data.maintenanceHabits[0] is string)))
+        && (!data.keys().hasAny(['userNotes']) || (data.userNotes is string && data.userNotes.size() <= 1500))
+        && (!data.keys().hasAny(['floorplanZones']) || (data.floorplanZones is list && data.floorplanZones.size() <= 20 && (data.floorplanZones.size() == 0 || data.floorplanZones[0] is map)))
+        && (!data.keys().hasAny(['weeklySchedule']) || (data.weeklySchedule is list && data.weeklySchedule.size() <= 7 && (data.weeklySchedule.size() == 0 || data.weeklySchedule[0] is map)))
+        && (!data.keys().hasAny(['detectedObjects']) || (data.detectedObjects is list && data.detectedObjects.size() <= 12 && (data.detectedObjects.size() == 0 || data.detectedObjects[0] is map)))
+        && (!data.keys().hasAny(['spaceUtilization']) || (data.spaceUtilization is list && data.spaceUtilization.size() <= 8 && (data.spaceUtilization.size() == 0 || data.spaceUtilization[0] is map)))
+        && (!data.keys().hasAny(['colorDecor']) || (data.colorDecor is map))
+        && (!data.keys().hasAny(['recyclingTips']) || (data.recyclingTips is list && data.recyclingTips.size() <= 6 && (data.recyclingTips.size() == 0 || data.recyclingTips[0] is string)))
+        && (!data.keys().hasAny(['redesignPreviewUrl']) || (data.redesignPreviewUrl is string && data.redesignPreviewUrl.size() <= 250000))
+        && (!data.keys().hasAny(['redesignStyle']) || (data.redesignStyle is string && data.redesignStyle.size() <= 40))
+        && (!data.keys().hasAny(['redesignSummary']) || (data.redesignSummary is string && data.redesignSummary.size() <= 600))
+        && (!data.keys().hasAny(['assignedMemberId']) || (data.assignedMemberId is string && data.assignedMemberId.size() <= 64))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidInventoryItem(data, userId, itemId) {
+      return data.keys().hasAll(['id', 'userId', 'itemName', 'location', 'roomName', 'category', 'quantity', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'userId', 'itemName', 'location', 'roomName', 'category', 'quantity', 'usageFrequency', 'photoUrl', 'notes', 'createdAt', 'updatedAt'])
+        && data.id is string && isValidId(data.id) && data.id == itemId
+        && data.userId is string && isValidId(data.userId) && data.userId == userId && data.userId == request.auth.uid
+        && data.itemName is string && data.itemName.size() >= 1 && data.itemName.size() <= 160
+        && data.location is string && data.location.size() >= 1 && data.location.size() <= 160
+        && data.roomName is string && data.roomName.size() >= 1 && data.roomName.size() <= 120
+        && data.category is string && data.category.size() >= 1 && data.category.size() <= 60
+        && data.quantity is int && data.quantity >= 1 && data.quantity <= 9999
+        && (!data.keys().hasAny(['usageFrequency']) || (data.usageFrequency is string && data.usageFrequency.size() <= 24 && data.usageFrequency in ['frequent', 'occasional', 'unused']))
+        && (!data.keys().hasAny(['photoUrl']) || (data.photoUrl is string && data.photoUrl.size() <= 180000))
+        && (!data.keys().hasAny(['notes']) || (data.notes is string && data.notes.size() <= 400))
+        && data.createdAt is timestamp && data.updatedAt is timestamp;
+    }
+
+    function isValidCalendarTask(data, userId, taskId) {
+      return data.keys().hasAll(['id', 'userId', 'dateIso', 'title', 'roomName', 'minutes', 'completed', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'userId', 'dateIso', 'title', 'roomName', 'minutes', 'priority', 'deadlineTime', 'completed', 'createdAt', 'updatedAt'])
+        && data.id is string && isValidId(data.id) && data.id == taskId
+        && data.userId is string && isValidId(data.userId) && data.userId == userId && data.userId == request.auth.uid
+        && data.dateIso is string && data.dateIso.size() >= 8 && data.dateIso.size() <= 16 && data.dateIso.matches('^\\d{4}-\\d{2}-\\d{2}$')
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 200
+        && data.roomName is string && data.roomName.size() <= 120
+        && data.minutes is int && data.minutes >= 1 && data.minutes <= 480
+        && (!data.keys().hasAny(['priority']) || (data.priority is string && data.priority.size() <= 16 && data.priority in ['high', 'medium', 'low']))
+        && (!data.keys().hasAny(['deadlineTime']) || (data.deadlineTime is string && data.deadlineTime.size() <= 16))
+        && data.completed is bool
+        && data.createdAt is timestamp && data.updatedAt is timestamp;
+    }
+
+    function isValidSavedDesign(data, userId, designId) {
+      return data.keys().hasAll(['id', 'userId', 'roomName', 'roomType', 'style', 'beforeImageUrl', 'afterImageUrl', 'summary', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'userId', 'roomName', 'roomType', 'style', 'budgetTier', 'furniturePref', 'wallColor', 'beforeImageUrl', 'afterImageUrl', 'summary', 'createdAt', 'updatedAt'])
+        && data.id is string && isValidId(data.id) && data.id == designId
+        && data.userId is string && isValidId(data.userId) && data.userId == userId && data.userId == request.auth.uid
+        && data.roomName is string && data.roomName.size() >= 1 && data.roomName.size() <= 200
+        && data.roomType is string && data.roomType.size() <= 40
+        && data.style is string && data.style.size() <= 40
+        && (!data.keys().hasAny(['budgetTier']) || (data.budgetTier is string && data.budgetTier.size() <= 40))
+        && (!data.keys().hasAny(['furniturePref']) || (data.furniturePref is string && data.furniturePref.size() <= 40))
+        && (!data.keys().hasAny(['wallColor']) || (data.wallColor is string && data.wallColor.size() <= 120))
+        && data.beforeImageUrl is string && data.beforeImageUrl.size() <= 250000
+        && data.afterImageUrl is string && data.afterImageUrl.size() <= 250000
+        && data.summary is string && data.summary.size() <= 600
+        && data.createdAt is timestamp && data.updatedAt is timestamp;
+    }
+
+    function isValidBudgetItem(data, userId, itemId) {
+      return data.keys().hasAll(['id', 'userId', 'roomName', 'title', 'category', 'estimatedCost', 'actualCost', 'purchased', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'userId', 'roomName', 'title', 'category', 'estimatedCost', 'actualCost', 'purchased', 'notes', 'createdAt', 'updatedAt'])
+        && data.id is string && isValidId(data.id) && data.id == itemId
+        && data.userId is string && isValidId(data.userId) && data.userId == userId && data.userId == request.auth.uid
+        && data.roomName is string && data.roomName.size() >= 1 && data.roomName.size() <= 120
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 180
+        && data.category is string && data.category.size() <= 32 && data.category in ['Storage', 'Furniture', 'Decor', 'Lighting', 'DIY', 'Cleaning']
+        && data.estimatedCost is number && data.estimatedCost >= 0 && data.estimatedCost <= 1000000
+        && data.actualCost is number && data.actualCost >= 0 && data.actualCost <= 1000000
+        && data.purchased is bool
+        && (!data.keys().hasAny(['notes']) || (data.notes is string && data.notes.size() <= 300))
+        && data.createdAt is timestamp && data.updatedAt is timestamp;
+    }
+
+    function isValidRoomLayout(data, userId, layoutId) {
+      return data.keys().hasAll(['id', 'userId', 'name', 'roomType', 'unit', 'width', 'length', 'openings', 'furniture', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'userId', 'name', 'roomType', 'unit', 'width', 'length', 'ceilingHeight', 'openings', 'furniture', 'aiSummary', 'createdAt', 'updatedAt'])
+        && data.id is string && isValidId(data.id) && data.id == layoutId
+        && data.userId is string && isValidId(data.userId) && data.userId == userId && data.userId == request.auth.uid
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 160
+        && data.roomType is string && data.roomType.size() <= 40
+        && data.unit is string && data.unit.size() <= 4 && data.unit in ['ft', 'm']
+        && data.width is number && data.width >= 3 && data.width <= 200
+        && data.length is number && data.length >= 3 && data.length <= 200
+        && (!data.keys().hasAny(['ceilingHeight']) || (data.ceilingHeight is number && data.ceilingHeight >= 2 && data.ceilingHeight <= 30))
+        && data.openings is list && data.openings.size() <= 20 && (data.openings.size() == 0 || data.openings[0] is map)
+        && data.furniture is list && data.furniture.size() <= 40 && (data.furniture.size() == 0 || data.furniture[0] is map)
+        && (!data.keys().hasAny(['aiSummary']) || (data.aiSummary is string && data.aiSummary.size() <= 800))
+        && data.createdAt is timestamp && data.updatedAt is timestamp;
+    }
+
+    function isValidUsageCounter(data, userId, monthKey) {
+      return data.keys().hasAll(['monthKey', 'userId', 'roomAnalyses', 'aiRedesigns', 'aiCoachMessages', 'shoppingQueries', 'layoutSuggestions', 'updatedAt'])
+        && data.keys().hasOnly(['monthKey', 'userId', 'roomAnalyses', 'aiRedesigns', 'aiCoachMessages', 'shoppingQueries', 'layoutSuggestions', 'updatedAt'])
+        && data.monthKey is string && data.monthKey == monthKey && data.monthKey.size() <= 16 && data.monthKey.matches('^\\d{4}-\\d{2}$')
+        && data.userId is string && isValidId(data.userId) && data.userId == userId && data.userId == request.auth.uid
+        && data.roomAnalyses is int && data.roomAnalyses >= 0 && data.roomAnalyses <= 10000
+        && data.aiRedesigns is int && data.aiRedesigns >= 0 && data.aiRedesigns <= 10000
+        && data.aiCoachMessages is int && data.aiCoachMessages >= 0 && data.aiCoachMessages <= 50000
+        && data.shoppingQueries is int && data.shoppingQueries >= 0 && data.shoppingQueries <= 10000
+        && data.layoutSuggestions is int && data.layoutSuggestions >= 0 && data.layoutSuggestions <= 10000
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidBillingInvoice(data, userId, invoiceId) {
+      return data.keys().hasAll(['id', 'userId', 'amountCents', 'currency', 'planTier', 'status', 'description', 'createdAt'])
+        && data.keys().hasOnly(['id', 'userId', 'amountCents', 'currency', 'planTier', 'status', 'description', 'createdAt'])
+        && data.id is string && isValidId(data.id) && data.id == invoiceId
+        && data.userId is string && isValidId(data.userId) && data.userId == userId
+        && data.amountCents is int && data.amountCents >= 0 && data.amountCents <= 10000000
+        && data.currency is string && data.currency.size() <= 8
+        && data.planTier is string && data.planTier.size() <= 16 && data.planTier in ['free', 'pro', 'premium']
+        && data.status is string && data.status.size() <= 16 && data.status in ['paid', 'pending', 'refunded']
+        && data.description is string && data.description.size() <= 240
+        && data.createdAt is timestamp;
+    }
+
+    function isValidFeedback(data, feedbackId) {
+      return data.keys().hasAll(['id', 'userId', 'userName', 'category', 'rating', 'message', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'userId', 'userName', 'category', 'rating', 'message', 'status', 'adminNote', 'createdAt', 'updatedAt'])
+        && data.id is string && isValidId(data.id) && data.id == feedbackId
+        && data.userId is string && isValidId(data.userId)
+        && data.userName is string && data.userName.size() >= 1 && data.userName.size() <= 120
+        && data.category is string && data.category.size() <= 24 && data.category in ['feature', 'ux', 'ai_quality', 'praise', 'other']
+        && data.rating is int && data.rating >= 1 && data.rating <= 5
+        && data.message is string && data.message.size() >= 5 && data.message.size() <= 1500
+        && data.status is string && data.status.size() <= 20 && data.status in ['new', 'reviewed', 'planned', 'resolved']
+        && (!data.keys().hasAny(['adminNote']) || (data.adminNote is string && data.adminNote.size() <= 600))
+        && data.createdAt is timestamp && data.updatedAt is timestamp;
+    }
+
+    function isValidReport(data, reportId) {
+      return data.keys().hasAll(['id', 'userId', 'userName', 'reportType', 'subject', 'details', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'userId', 'userName', 'reportType', 'subject', 'details', 'pageSection', 'status', 'adminResolution', 'createdAt', 'updatedAt'])
+        && data.id is string && isValidId(data.id) && data.id == reportId
+        && data.userId is string && isValidId(data.userId)
+        && data.userName is string && data.userName.size() >= 1 && data.userName.size() <= 120
+        && data.reportType is string && data.reportType.size() <= 24 && data.reportType in ['bug', 'abuse', 'billing', 'privacy']
+        && data.subject is string && data.subject.size() >= 3 && data.subject.size() <= 160
+        && data.details is string && data.details.size() >= 10 && data.details.size() <= 2000
+        && (!data.keys().hasAny(['pageSection']) || (data.pageSection is string && data.pageSection.size() <= 60))
+        && data.status is string && data.status.size() <= 20 && data.status in ['open', 'investigating', 'resolved', 'dismissed']
+        && (!data.keys().hasAny(['adminResolution']) || (data.adminResolution is string && data.adminResolution.size() <= 600))
+        && data.createdAt is timestamp && data.updatedAt is timestamp;
+    }
+
+    function isValidAuditLog(data, logId) {
+      return data.keys().hasAll(['id', 'actorUid', 'actorName', 'action', 'details', 'createdAt'])
+        && data.keys().hasOnly(['id', 'actorUid', 'actorName', 'action', 'targetId', 'details', 'createdAt'])
+        && data.id is string && isValidId(data.id) && data.id == logId
+        && data.actorUid is string && isValidId(data.actorUid) && data.actorUid == request.auth.uid
+        && data.actorName is string && data.actorName.size() >= 1 && data.actorName.size() <= 120
+        && data.action is string && data.action.size() >= 1 && data.action.size() <= 120
+        && (!data.keys().hasAny(['targetId']) || (data.targetId is string && data.targetId.size() <= 128))
+        && data.details is string && data.details.size() <= 500
+        && data.createdAt is timestamp;
+    }
+
+    function isValidSystemConfig(data) {
+      return data.keys().hasAll(['maintenanceMode', 'aiAnalysisEnabled', 'aiRedesignEnabled', 'aiCoachEnabled', 'aiShoppingEnabled', 'aiLayoutEnabled', 'activeTextModel', 'activeImageModel', 'maxUploadMb', 'updatedAt'])
+        && data.keys().hasOnly(['maintenanceMode', 'announcementBanner', 'aiAnalysisEnabled', 'aiRedesignEnabled', 'aiCoachEnabled', 'aiShoppingEnabled', 'aiLayoutEnabled', 'activeTextModel', 'activeImageModel', 'maxUploadMb', 'updatedAt'])
+        && data.maintenanceMode is bool
+        && (!data.keys().hasAny(['announcementBanner']) || (data.announcementBanner is string && data.announcementBanner.size() <= 300))
+        && data.aiAnalysisEnabled is bool
+        && data.aiRedesignEnabled is bool
+        && data.aiCoachEnabled is bool
+        && data.aiShoppingEnabled is bool
+        && data.aiLayoutEnabled is bool
+        && data.activeTextModel is string && data.activeTextModel.size() >= 1 && data.activeTextModel.size() <= 80
+        && data.activeImageModel is string && data.activeImageModel.size() >= 1 && data.activeImageModel.size() <= 80
+        && data.maxUploadMb is int && data.maxUploadMb >= 1 && data.maxUploadMb <= 25
+        && data.updatedAt is timestamp;
+    }
+
+    match /admins/{adminUid} {
+      allow get: if isValidId(adminUid) && isSignedIn() && request.auth.uid == adminUid;
+      allow list, create, update, delete: if false;
+    }
+
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isBootstrappedAdmin();
+      allow create: if isValidId(userId)
+        && isVerifiedUser()
