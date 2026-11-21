@@ -1,0 +1,344 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authenticated user profile, preferences, gamification stats, subscription/RBAC state, privacy settings, reminder settings, and household roster.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "displayName": { "type": "string", "maxLength": 120 },
+        "photoURL": { "type": "string", "maxLength": 500 },
+        "language": { "type": "string", "enum": ["en", "bn"], "maxLength": 8 },
+        "role": { "type": "string", "enum": ["user", "admin"], "maxLength": 16 },
+        "status": { "type": "string", "enum": ["active", "suspended"], "maxLength": 16 },
+        "planTier": { "type": "string", "enum": ["free", "pro", "premium"], "maxLength": 16 },
+        "subscription": { "type": "object" },
+        "privacy": { "type": "object" },
+        "preferences": { "type": "object" },
+        "stats": { "type": "object" },
+        "reminderConfig": { "type": "object" },
+        "familyMembers": { "type": "array" },
+        "familyLogs": { "type": "array" },
+        "cleaningHistory": { "type": "array" },
+        "notifications": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "createdAt", "updatedAt"]
+    },
+    "RoomPlan": {
+      "title": "RoomPlan",
+      "description": "AI-generated room declutter analysis, action plan checklist, and storage recommendations saved by a user.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "userId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "roomName": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "roomType": { "type": "string", "enum": ["living_room", "bedroom", "home_office", "kitchen", "dining_room", "closet", "bathroom", "garage", "kids_room", "general"], "maxLength": 40 },
+        "focusGoal": { "type": "string", "enum": ["quick_wins", "maximize_space", "storage_solutions", "aesthetic_reset", "deep_declutter"], "maxLength": 40 },
+        "imageUrl": { "type": "string", "maxLength": 250000 },
+        "clutterScore": { "type": "integer" },
+        "cleaningDifficulty": { "type": "string", "enum": ["Easy", "Moderate", "Intensive"], "maxLength": 24 },
+        "estimatedCleaningMinutes": { "type": "integer" },
+        "furnitureAnalysis": { "type": "string", "maxLength": 1500 },
+        "overallAssessment": { "type": "string", "maxLength": 2000 },
+        "detectedItems": { "type": "array" },
+        "quickWins": { "type": "array" },
+        "problemAreas": { "type": "array" },
+        "actionPlan": { "type": "array" },
+        "storageRecommendations": { "type": "array" },
+        "layoutAdvice": { "type": "string", "maxLength": 3000 },
+        "minimalistTip": { "type": "string", "maxLength": 1000 },
+        "afterImageUrl": { "type": "string", "maxLength": 250000 },
+        "afterClutterScore": { "type": "integer" },
+        "afterSummary": { "type": "string", "maxLength": 1000 },
+        "triageItems": { "type": "array" },
+        "maintenanceHabits": { "type": "array" },
+        "userNotes": { "type": "string", "maxLength": 1500 },
+        "floorplanZones": { "type": "array" },
+        "weeklySchedule": { "type": "array" },
+        "detectedObjects": { "type": "array" },
+        "spaceUtilization": { "type": "array" },
+        "colorDecor": { "type": "object" },
+        "recyclingTips": { "type": "array" },
+        "redesignPreviewUrl": { "type": "string", "maxLength": 250000 },
+        "redesignStyle": { "type": "string", "maxLength": 40 },
+        "redesignSummary": { "type": "string", "maxLength": 600 },
+        "assignedMemberId": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "roomName", "roomType", "focusGoal", "imageUrl", "clutterScore", "overallAssessment", "detectedItems", "quickWins", "problemAreas", "actionPlan", "storageRecommendations", "layoutAdvice", "minimalistTip", "createdAt", "updatedAt"]
+    },
+    "InventoryItem": {
+      "title": "InventoryItem",
+      "description": "Stored household item with room, container location, category, quantity, usage frequency, and optional photo.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "userId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "itemName": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "location": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "roomName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "category": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "quantity": { "type": "integer" },
+        "usageFrequency": { "type": "string", "enum": ["frequent", "occasional", "unused"], "maxLength": 24 },
+        "photoUrl": { "type": "string", "maxLength": 180000 },
+        "notes": { "type": "string", "maxLength": 400 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "itemName", "location", "roomName", "category", "quantity", "createdAt", "updatedAt"]
+    },
+    "CalendarTask": {
+      "title": "CalendarTask",
+      "description": "Scheduled cleaning or declutter task on a specific date with optional priority and deadline.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "userId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "dateIso": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$", "maxLength": 16 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "roomName": { "type": "string", "maxLength": 120 },
+        "minutes": { "type": "integer" },
+        "priority": { "type": "string", "enum": ["high", "medium", "low"], "maxLength": 16 },
+        "deadlineTime": { "type": "string", "maxLength": 16 },
+        "completed": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "dateIso", "title", "roomName", "minutes", "completed", "createdAt", "updatedAt"]
+    },
+    "SavedDesign": {
+      "title": "SavedDesign",
+      "description": "Saved AI room redesign before/after pair in the user gallery.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "userId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "roomName": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "roomType": { "type": "string", "maxLength": 40 },
+        "style": { "type": "string", "maxLength": 40 },
+        "budgetTier": { "type": "string", "maxLength": 40 },
+        "furniturePref": { "type": "string", "maxLength": 40 },
+        "wallColor": { "type": "string", "maxLength": 120 },
+        "beforeImageUrl": { "type": "string", "maxLength": 250000 },
+        "afterImageUrl": { "type": "string", "maxLength": 250000 },
+        "summary": { "type": "string", "maxLength": 600 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "roomName", "roomType", "style", "beforeImageUrl", "afterImageUrl", "summary", "createdAt", "updatedAt"]
+    },
+    "BudgetExpense": {
+      "title": "BudgetExpense",
+      "description": "Tracked room organization budget line item with estimated and actual spend.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "userId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "roomName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 180 },
+        "category": { "type": "string", "enum": ["Storage", "Furniture", "Decor", "Lighting", "DIY", "Cleaning"], "maxLength": 32 },
+        "estimatedCost": { "type": "number" },
+        "actualCost": { "type": "number" },
+        "purchased": { "type": "boolean" },
+        "notes": { "type": "string", "maxLength": 300 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "roomName", "title", "category", "estimatedCost", "actualCost", "purchased", "createdAt", "updatedAt"]
+    },
+    "RoomLayoutPlan": {
+      "title": "RoomLayoutPlan",
+      "description": "Scaled room dimensions, doors/windows, and interactive furniture placement plan.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "userId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "roomType": { "type": "string", "maxLength": 40 },
+        "unit": { "type": "string", "enum": ["ft", "m"], "maxLength": 4 },
+        "width": { "type": "number" },
+        "length": { "type": "number" },
+        "ceilingHeight": { "type": "number" },
+        "openings": { "type": "array" },
+        "furniture": { "type": "array" },
+        "aiSummary": { "type": "string", "maxLength": 800 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "name", "roomType", "unit", "width", "length", "openings", "furniture", "createdAt", "updatedAt"]
+    },
+    "UsageCounter": {
+      "title": "UsageCounter",
+      "description": "Monthly AI and room feature usage tracking for subscription quota enforcement.",
+      "type": "object",
+      "properties": {
+        "monthKey": { "type": "string", "pattern": "^\\d{4}-\\d{2}$", "maxLength": 16 },
+        "userId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "roomAnalyses": { "type": "integer" },
+        "aiRedesigns": { "type": "integer" },
+        "aiCoachMessages": { "type": "integer" },
+        "shoppingQueries": { "type": "integer" },
+        "layoutSuggestions": { "type": "integer" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["monthKey", "userId", "roomAnalyses", "aiRedesigns", "aiCoachMessages", "shoppingQueries", "layoutSuggestions", "updatedAt"]
+    },
+    "BillingInvoice": {
+      "title": "BillingInvoice",
+      "description": "Billing history record associated with subscription upgrades or admin grants.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "userId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "amountCents": { "type": "integer" },
+        "currency": { "type": "string", "maxLength": 8 },
+        "planTier": { "type": "string", "enum": ["free", "pro", "premium"], "maxLength": 16 },
+        "status": { "type": "string", "enum": ["paid", "pending", "refunded"], "maxLength": 16 },
+        "description": { "type": "string", "maxLength": 240 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "amountCents", "currency", "planTier", "status", "description", "createdAt"]
+    },
+    "FeedbackItem": {
+      "title": "FeedbackItem",
+      "description": "User product feedback and feature suggestions.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "userId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "userName": { "type": "string", "maxLength": 120 },
+        "category": { "type": "string", "enum": ["feature", "ux", "ai_quality", "praise", "other"], "maxLength": 24 },
+        "rating": { "type": "integer" },
+        "message": { "type": "string", "minLength": 5, "maxLength": 1500 },
+        "status": { "type": "string", "enum": ["new", "reviewed", "planned", "resolved"], "maxLength": 20 },
+        "adminNote": { "type": "string", "maxLength": 600 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "userName", "category", "rating", "message", "status", "createdAt", "updatedAt"]
+    },
+    "UserReport": {
+      "title": "UserReport",
+      "description": "User bug, billing, privacy, or abuse report ticket.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "userId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "userName": { "type": "string", "maxLength": 120 },
+        "reportType": { "type": "string", "enum": ["bug", "abuse", "billing", "privacy"], "maxLength": 24 },
+        "subject": { "type": "string", "minLength": 3, "maxLength": 160 },
+        "details": { "type": "string", "minLength": 10, "maxLength": 2000 },
+        "pageSection": { "type": "string", "maxLength": 60 },
+        "status": { "type": "string", "enum": ["open", "investigating", "resolved", "dismissed"], "maxLength": 20 },
+        "adminResolution": { "type": "string", "maxLength": 600 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "userName", "reportType", "subject", "details", "status", "createdAt", "updatedAt"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Immutable admin and security activity audit trail.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "actorUid": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "actorName": { "type": "string", "maxLength": 120 },
+        "action": { "type": "string", "maxLength": 120 },
+        "targetId": { "type": "string", "maxLength": 128 },
+        "details": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "actorUid", "actorName", "action", "details", "createdAt"]
+    },
+    "SystemConfig": {
+      "title": "SystemConfig",
+      "description": "Platform-wide feature flags and AI model configuration settings.",
+      "type": "object",
+      "properties": {
+        "maintenanceMode": { "type": "boolean" },
+        "announcementBanner": { "type": "string", "maxLength": 300 },
+        "aiAnalysisEnabled": { "type": "boolean" },
+        "aiRedesignEnabled": { "type": "boolean" },
+        "aiCoachEnabled": { "type": "boolean" },
+        "aiShoppingEnabled": { "type": "boolean" },
+        "aiLayoutEnabled": { "type": "boolean" },
+        "activeTextModel": { "type": "string", "maxLength": 80 },
+        "activeImageModel": { "type": "string", "maxLength": 80 },
+        "maxUploadMb": { "type": "integer" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["maintenanceMode", "aiAnalysisEnabled", "aiRedesignEnabled", "aiCoachEnabled", "aiShoppingEnabled", "aiLayoutEnabled", "activeTextModel", "activeImageModel", "maxUploadMb", "updatedAt"]
+    },
+    "AdminMarker": {
+      "title": "AdminMarker",
+      "description": "Trusted read-only marker granting admin privileges by UID.",
+      "type": "object",
+      "properties": {
+        "role": { "type": "string", "enum": ["admin"] }
+      },
+      "required": ["role"]
+    }
+  },
+  "firestore": {
+    "/admins/{adminUid}": {
+      "schema": { "$ref": "#/entities/AdminMarker" },
+      "description": "Trusted admin grant documents."
+    },
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private user profile, settings, stats, subscription tier, privacy preferences, and notifications keyed by Firebase Auth UID."
+    },
+    "/users/{userId}/rooms/{roomId}": {
+      "schema": { "$ref": "#/entities/RoomPlan" },
+      "description": "Saved room decluttering analyses and interactive checklists owned by the user."
+    },
+    "/users/{userId}/inventory/{itemId}": {
+      "schema": { "$ref": "#/entities/InventoryItem" },
+      "description": "User's smart storage inventory items."
+    },
+    "/users/{userId}/calendarTasks/{taskId}": {
+      "schema": { "$ref": "#/entities/CalendarTask" },
+      "description": "User's scheduled cleaning calendar tasks."
+    },
+    "/users/{userId}/savedDesigns/{designId}": {
+      "schema": { "$ref": "#/entities/SavedDesign" },
+      "description": "User's saved AI room redesigns gallery."
+    },
+    "/users/{userId}/budgetItems/{itemId}": {
+      "schema": { "$ref": "#/entities/BudgetExpense" },
+      "description": "User's tracked room budget expenses and shopping items."
+    },
+    "/users/{userId}/roomLayouts/{layoutId}": {
+      "schema": { "$ref": "#/entities/RoomLayoutPlan" },
+      "description": "User's scaled 2D room furniture layouts and dimensions."
+    },
+    "/users/{userId}/usage/{monthKey}": {
+      "schema": { "$ref": "#/entities/UsageCounter" },
+      "description": "User's monthly quota usage counters."
+    },
+    "/users/{userId}/billing/{invoiceId}": {
+      "schema": { "$ref": "#/entities/BillingInvoice" },
+      "description": "User's subscription billing invoices."
+    },
+    "/feedback/{feedbackId}": {
+      "schema": { "$ref": "#/entities/FeedbackItem" },
+      "description": "User-submitted product feedback and ratings."
+    },
+    "/reports/{reportId}": {
+      "schema": { "$ref": "#/entities/UserReport" },
+      "description": "User-submitted bug, billing, privacy, and abuse reports."
+    },
+    "/auditLogs/{logId}": {
+      "schema": { "$ref": "#/entities/AuditLog" },
+      "description": "Immutable admin and security audit log entries."
+    },
+    "/systemConfig/{configId}": {
+      "schema": { "$ref": "#/entities/SystemConfig" },
+      "description": "Platform feature flags and AI configuration settings."
+    }
+  }
+}
