@@ -1,0 +1,65 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  --font-display: "Outfit", "Plus Jakarta Sans", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --color-deep-green: #163D32;
+  --color-soft-green: #DDF3E5;
+  --color-canvas: #F7F9F6;
+  --color-accent-gold: #E9B95B;
+}
+
+@layer base {
+  body {
+    font-family: var(--font-sans);
+    background-color: #F7F9F6;
+    color: #163D32;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  html.dark body {
+    background-color: #0D1A15;
+    color: #EDF4EF;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: var(--font-display);
+  }
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #163D32 !important;
+  }
+  header,
+  aside,
+  nav,
+  button,
+  .no-print {
+    display: none !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
