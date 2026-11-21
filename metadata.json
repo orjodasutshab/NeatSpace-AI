@@ -1,0 +1,6 @@
+{
+  "name": "Room Declutter & Organizer AI",
+  "description": "Upload room photos to get instant AI decluttering suggestions, room zoning plans, step-by-step organization tasks, and an interactive AI organizer coach.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
